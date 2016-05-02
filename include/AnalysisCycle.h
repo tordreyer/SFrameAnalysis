@@ -217,6 +217,7 @@ private:
   std::string m_TopTagJetCollection;
   std::string m_HiggsTagJetCollection;
   std::string m_TopJetCollectionGen;
+  std::string m_CAGenJetCollection;
   std::string m_GenJetCollectionWithParts;
   std::string m_PrunedJetCollection;
   std::string m_GenParticleCollection;
@@ -241,6 +242,7 @@ private:
   std::vector< TopJet > m_output_topjets;
   std::vector< TopJet > m_output_toptagjets;
   std::vector< TopJet > m_output_higgstagjets;
+  std::vector< Particle > m_output_cagenjets;
   std::vector< GenTopJet > m_output_topjetsgen;
   std::vector< GenJetWithParts > m_output_genjetswithparts;
   std::vector< TopJet > m_output_prunedjets;

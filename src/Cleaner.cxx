@@ -32,9 +32,12 @@ void Cleaner::resetEventCalc()
     //reset everything in EventCalc except the event weight
     EventCalc* evc = EventCalc::Instance();
     double weight = evc->GetWeight();
+    double recweight = evc->GetRecWeight();
+    double genweight = evc->GetGenWeight();
     evc->Reset();
     evc->ProduceWeight(weight);
-
+    evc->ProduceRecWeight(recweight);
+    evc->ProduceGenWeight(genweight);
 }
 
 void Cleaner::JetEnergyResolutionShifter(bool sort)
@@ -141,28 +144,54 @@ void Cleaner::JetEnergyResolutionShifterFat(bool sort)
     double deltarmin = double_infinity();
     
     GenTopJet nextjet;
-    
-    for(unsigned int igj=0; igj<bcc->topjetsgen->size();++igj){
+    GenJetWithParts nextjet2;
+
+    if(bcc->topjetsgen){   
+      for(unsigned int igj=0; igj<bcc->topjetsgen->size();++igj){
+
+	GenTopJet checkgen=bcc->topjetsgen->at(igj);
+	
+	if(checkgen.deltaR(topjet) < deltarmin){
+	  deltarmin = checkgen.deltaR(topjet);
+	  nextjet = checkgen;
+	}
+      }
+
+      if(deltarmin>0.8){
+	continue;
+      }
       
-      GenTopJet checkgen=bcc->topjetsgen->at(igj);
+      if(nextjet.pt()<15.0){
+	continue;
+      }
+    }
+
+    else if(bcc->genjetswithparts){
+      for(unsigned int igj=0; igj<bcc->genjetswithparts->size();++igj){
+	
+	GenJetWithParts checkgen=bcc->genjetswithparts->at(igj);
+	
+	if(checkgen.deltaR(topjet) < deltarmin){
+	  deltarmin = checkgen.deltaR(topjet);
+	  nextjet2 = checkgen;
+	}
+      }
+
+      if(deltarmin>0.8){
+	continue;
+      }
       
-      if(checkgen.deltaR(topjet) < deltarmin){
-	deltarmin = checkgen.deltaR(topjet);
-	nextjet = checkgen;
+      if(nextjet.pt()<15.0){
+	continue;
       }
       
     }//loop over genjets
     
-    if(deltarmin>0.8){
-      continue;
-    }
+ 
     
-    if(nextjet.pt()<15.0){
-      continue;
-    }
-    
-    float genpt = nextjet.pt();
-
+    float genpt;
+    if(bcc->topjetsgen) genpt = nextjet.pt();
+    else if(bcc->genjetswithparts) genpt = nextjet2.pt();
     LorentzVector jet_v4 =  bcc->topjets->at(i).v4();
 
     LorentzVector jet_v4_raw = jet_v4*bcc->topjets->at(i).JEC_factor_raw();
@@ -484,6 +513,110 @@ void Cleaner::JetLeptonSubtractor(FactorizedJetCorrector *corrector, bool sort)
     resetEventCalc();
 }
 
+
+void Cleaner::TopJetLeptonSubtractor(FactorizedJetCorrector *corrector, bool sort)
+{
+
+    //std::cout<< "event: " <<bcc->event <<std::endl;
+    //std::cout<< "ID| pt raw  | PAT pt | area     | rho     | corr    | old cor| JER ptscale | pt new | eta new | ptgen " <<std::endl;
+
+    if (!corrector){
+      std::cerr << "JetLeptonSubtractor: called without a valid JetCorrector! Please correct the error." << std::endl; 
+      std::cerr << "Hint: have you supplied correct JEC files in your xml steering?" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  
+
+    for(unsigned int i=0; i<bcc->topjets->size(); ++i) {
+      
+        LorentzVector jet_v4_raw = bcc->topjets->at(i).v4()*bcc->topjets->at(i).JEC_factor_raw();
+	std::vector<PFParticle> *PFparticles = bcc->pfparticles;
+	std::vector<unsigned int> PFindices = bcc->topjets->at(i).pfconstituents_indices();
+        //subtract lepton momenta from raw jet momentum
+
+        //std::cout << i+1 << " | " << jet_v4_raw.Pt() << std::endl;
+        double ele_energy =  bcc->topjets->at(i).chargedEmEnergyFraction()*jet_v4_raw.E();
+        double mu_energy = bcc->topjets->at(i).muonEnergyFraction()*jet_v4_raw.E();
+
+        if(bcc->electrons) {
+	  for(unsigned int j=0; j<bcc->electrons->size(); ++j) { 
+	    if(bcc->electrons->at(j).relIso()>0.2) {
+	      for(unsigned int k = 0 ; k < PFindices.size(); k++){
+		if( bcc->electrons->at(j).pt() == PFparticles->at(PFindices.at(k)).pt() &&  bcc->electrons->at(j).eta() == PFparticles->at(PFindices.at(k)).eta()  &&  bcc->electrons->at(j).phi() == PFparticles->at(PFindices.at(k)).phi()) {
+		  jet_v4_raw -= bcc->electrons->at(j).v4();
+		  PFindices.erase(PFindices.begin()+j); 
+		  bcc->topjets->at(i).set_pfconstituents_indices(PFindices); 
+		  break;
+		}
+	      }	           
+	    }
+          }
+        }
+
+
+        if(bcc->muons) {
+          for(unsigned int j=0; j<bcc->muons->size(); ++j) {
+	    double muon_reliso((bcc->muons->at(j).chargedHadronIso() + bcc->muons->at(j).neutralHadronIso() + bcc->muons->at(j).photonIso()) / bcc->muons->at(j).pt());
+            if(muon_reliso>0.15) {
+	
+	      for(unsigned int k = 0 ; k < PFindices.size(); k++){
+		if( bcc->muons->at(j).pt() == PFparticles->at(PFindices.at(k)).pt() &&  bcc->muons->at(j).eta() == PFparticles->at(PFindices.at(k)).phi() &&  bcc->muons->at(j).eta() == PFparticles->at(PFindices.at(k)).phi()) {
+		  jet_v4_raw -= bcc->muons->at(j).v4();
+		  PFindices.erase(PFindices.begin()+j); 
+		  bcc->topjets->at(i).set_pfconstituents_indices(PFindices);
+		  break;}
+	      }      
+            }
+          }
+        }
+    
+
+        //apply jet energy corrections to modified raw momentum
+        corrector->setJetPt(jet_v4_raw.Pt());
+        corrector->setJetEta(jet_v4_raw.Eta());
+        corrector->setJetE(jet_v4_raw.E());
+        corrector->setJetA(bcc->topjets->at(i).jetArea());
+        corrector->setRho(bcc->rho);
+        corrector->setNPV(bcc->pvs->size());
+
+        double correctionfactor = corrector->getCorrection();
+
+        LorentzVector jet_v4_corrected = jet_v4_raw *correctionfactor;
+
+	if (m_jecvar != e_Default){
+	  if (m_jec_unc==NULL){
+	    std::cerr << "JEC variation should be applied, but JEC uncertainty object is NULL! Abort." << std::endl;
+	    exit(EXIT_FAILURE);
+	  }
+	  // ignore jets with very low pt or high eta, avoiding a crash from the JESUncertainty tool
+	  double pt = jet_v4_corrected.Pt();
+	  double eta = jet_v4_corrected.Eta();
+	  if (pt<5. || fabs(eta)>5.) continue;
+	  	  
+	  m_jec_unc->setJetEta(eta);
+	  m_jec_unc->setJetPt(pt);
+
+	  double unc = 0.;	  
+	  if (m_jecvar == e_Up){
+	    unc = m_jec_unc->getUncertainty(1);
+	    correctionfactor *= (1 + fabs(unc));
+	  } else if (m_jecvar == e_Down){
+	    unc = m_jec_unc->getUncertainty(-1);
+	    correctionfactor *= (1 - fabs(unc));
+	  }
+	  jet_v4_corrected = jet_v4_raw * correctionfactor;
+	}
+
+        //std::cout << i+1 << " | " << jet_v4_raw.Pt() << " | " <<  bcc->jets->at(i).pt() << " | " << bcc->jets->at(i).jetArea()<< " | " << bcc->rho << " | " << correctionfactor  << " | " << 1./bcc->jets->at(i).JEC_factor_raw() << " | " << std::endl;
+
+        bcc->topjets->at(i).set_v4(jet_v4_corrected);
+        bcc->topjets->at(i).set_JEC_factor_raw(1./correctionfactor);
+    }
+
+    if(sort) std::sort(bcc->topjets->begin(), bcc->topjets->end(), HigherPt());
+    resetEventCalc();
+}
+
 void Cleaner::JetRecorrector( FactorizedJetCorrector *corrector, bool sort, bool useTopJets, bool propagate_to_met, bool useTopTagJets, bool useHiggsTagJets, double extratopjec)
 {
     
@@ -527,8 +660,15 @@ void Cleaner::JetRecorrector( FactorizedJetCorrector *corrector, bool sort, bool
         corrector->setNPV(bcc->pvs->size());
 
         float correctionfactor = corrector->getCorrection();
-
+	float correctionfactor1 = correctionfactor; //DEBUGGING
         LorentzVector jet_v4_corrected = jet_v4_raw *correctionfactor;
+
+	//debugging 
+	double m1 = jet_v4_corrected.mass();
+	double pt1 = jet_v4_corrected.Pt(); //DEBUGGING
+	double eta1 = jet_v4_corrected.Eta(); //DEBUGGING
+	double phi1 = jet_v4_corrected.Phi(); //DEBUGGING
+	double e1 = jet_v4_corrected.E(); //DEBUGGING
 
 	if (m_jecvar != e_Default){
 	  if (m_jec_unc==NULL){
@@ -568,8 +708,31 @@ void Cleaner::JetRecorrector( FactorizedJetCorrector *corrector, bool sort, bool
                 bcc->met->set_phi(metv4.Phi());
             }
         }
-
         jets.at(i)->set_v4(jet_v4_corrected);
+	bool NoMassVariation = true;	//DEBUGGING
+	double pt2 = jets.at(i)->pt(); //DEBUGGING
+      	double eta2 = jets.at(i)->eta(); //DEBUGGING
+	double phi2 = jets.at(i)->phi(); //DEBUGGING
+	double e2 = jets.at(i)->energy(); //DEBUGGING
+	double m2 = jets.at(i)->v4().mass();
+	if ((m_jecvar == e_Up || m_jecvar == e_Down) && NoMassVariation){
+	  double mp2 = pow(jet_v4_corrected.mass(),2);
+	  double E2 = pow(jet_v4_corrected.E(),2);
+	  double c2 = pow(correctionfactor1/correctionfactor,2);
+       	  jets.at(i)->set_energy(sqrt( E2 + mp2 * c2 - mp2));
+  // jets.at(i)->set_energy(sqrt(pow(jet_v4_corrected.mass(),2)*(1/(correctionfactor*correctionfactor)-1)+jet_v4_corrected.E()*jet_v4_corrected.E()));
+	}
+	/*	//debugging
+	double m3 = jets.at(i)->v4().mass();
+	cout << "========================================" << endl;
+	cout <<"default correction mass: "<< m1 << "   variated mass: " << m2 <<  "   E corr mass: " << m3<< endl;
+	cout <<"degfault pt: "<< pt1 <<"   variated pt: "<< pt2 << "   E corr pt: " << jets.at(i)->pt() <<  endl;
+	cout <<"degfault eta: "<< eta1 <<"   variated eta: "<< eta2 << "   E corr eta: " << jets.at(i)->eta() <<  endl;
+	cout <<"degfault phi: "<< phi1 <<"   variated phi: "<< phi2 << "   E corr phi: " << jets.at(i)->phi() <<  endl;
+	cout <<"degfault E: "<< e1 <<"   variated E: "<< e2 << "   E corr E: " << jets.at(i)->energy() <<  endl;
+	cout <<"correctionfactor1: "<< correctionfactor1 <<  endl;
+	cout <<"correctionfactor: "<< correctionfactor <<  endl;
+	cout << "========================================" << endl;*/
         jets.at(i)->set_JEC_factor_raw(1./correctionfactor);
     }
 

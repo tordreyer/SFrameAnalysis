@@ -72,6 +72,7 @@ AnalysisCycle::AnalysisCycle()
     DeclareProperty( "METName", m_METName );
     DeclareProperty( "TopJetCollection", m_TopJetCollection );
     DeclareProperty( "TopJetCollectionGen", m_TopJetCollectionGen );
+    DeclareProperty( "CAGenJetCollection", m_CAGenJetCollection );
     DeclareProperty( "GenJetCollectionWithParts", m_GenJetCollectionWithParts );
     DeclareProperty( "PrunedJetCollection", m_PrunedJetCollection );
     DeclareProperty( "TopTagJetCollection", m_TopTagJetCollection );
@@ -383,6 +384,7 @@ void AnalysisCycle::BeginInputData( const SInputData& inputData) throw( SError )
 	if(m_HiggsTagJetCollection.size()>0) DeclareVariable(m_output_higgstagjets, m_HiggsTagJetCollection.c_str());
         if(m_addGenInfo && m_TopJetCollectionGen.size()>0) DeclareVariable(m_output_topjetsgen, m_TopJetCollectionGen.c_str());
        	if(m_addGenInfo && m_GenJetCollectionWithParts.size()>0) DeclareVariable(m_output_genjetswithparts, m_GenJetCollectionWithParts.c_str());
+	if(m_addGenInfo && m_CAGenJetCollection.size()>0) DeclareVariable(m_output_cagenjets, m_CAGenJetCollection.c_str());
         if(m_PrunedJetCollection.size()>0) DeclareVariable(m_output_prunedjets, m_PrunedJetCollection.c_str());
         if(m_addGenInfo && m_GenParticleCollection.size()>0) DeclareVariable(m_output_genparticles, m_GenParticleCollection.c_str());
         if(m_PFParticleCollection.size()>0) DeclareVariable(m_output_pfparticles, m_PFParticleCollection.c_str());
@@ -706,7 +708,7 @@ void AnalysisCycle::EndInputData( const SInputData& ) throw( SError )
     FinaliseHistos();
 
     ResetSelectionStats();
-
+   
     delete m_lsf;
     delete m_pdfweights;
     delete m_puwp;
@@ -721,7 +723,7 @@ void AnalysisCycle::EndInputData( const SInputData& ) throw( SError )
     delete m_jes_unc;
     delete m_jes_unc_top;
     delete m_jes_unc_sub;
-
+    
     m_tpr = NULL;
     m_hepsf = NULL;
 
@@ -748,6 +750,7 @@ void AnalysisCycle::BeginInputFile( const SInputData& ) throw( SError )
     if(m_PrimaryVertexCollection.size()>0) ConnectVariable( "AnalysisTree", m_PrimaryVertexCollection.c_str() , m_bcc.pvs);
     if(m_TopJetCollection.size()>0) ConnectVariable( "AnalysisTree", m_TopJetCollection.c_str(), m_bcc.topjets);
     if(m_addGenInfo && m_TopJetCollectionGen.size()>0) ConnectVariable( "AnalysisTree", m_TopJetCollectionGen.c_str() , m_bcc.topjetsgen);
+    if(m_addGenInfo && m_CAGenJetCollection.size()>0) ConnectVariable( "AnalysisTree", m_CAGenJetCollection.c_str() , m_bcc.cagenjets);
     if(m_addGenInfo && m_GenJetCollectionWithParts.size()>0)  ConnectVariable( "AnalysisTree", m_GenJetCollectionWithParts.c_str() , m_bcc.genjetswithparts);
     if(m_PrunedJetCollection.size()>0) ConnectVariable( "AnalysisTree", m_PrunedJetCollection.c_str() , m_bcc.prunedjets);
     if(m_TopTagJetCollection.size()>0) ConnectVariable( "AnalysisTree", m_TopTagJetCollection.c_str(), m_bcc.toptagjets);
@@ -811,8 +814,8 @@ void AnalysisCycle::ExecuteEvent( const SInputData&, Double_t weight) throw( SEr
     if(m_bcc.isRealData) weight = 1;
 
     // store the weight (lumiweight) in the eventcalc class and use it
+    calc -> ProduceGenWeight(weight);
     calc -> ProduceWeight(weight);
-
 
     // apply energy shift of tau candidates for uncertainty
     if (m_sys_unc == e_TauEnergy){
@@ -828,29 +831,35 @@ void AnalysisCycle::ExecuteEvent( const SInputData&, Double_t weight) throw( SEr
 
         std::vector<float> genweights =  m_bcc.genInfo->weights();
         for(unsigned int i=0; i< genweights.size(); ++i) {
-            calc -> ProduceWeight(genweights[i]);
+            calc -> ProduceGenWeight(genweights[i]);
+	    calc -> ProduceWeight(genweights[i]);
         }
 
         if(m_puwp) {
             double pu_weight = m_puwp->produceWeight(m_bcc.genInfo);
             // set the weight in the eventcalc
-            calc -> ProduceWeight(pu_weight);
+            calc -> ProduceRecWeight(pu_weight);
+	    calc -> ProduceWeight(pu_weight);
         }
 	if(m_trig) {
             double trig_weight = m_trig->produceWeight(&m_bcc);
             // set the weight in the eventcalc
-            calc -> ProduceWeight(trig_weight);
+            calc -> ProduceRecWeight(trig_weight);
+	    calc -> ProduceWeight(trig_weight);
         }
 
 	if(m_tpr){
 	  if(m_toppagptweight=="mean"||m_toppagptweight=="Mean"||m_toppagptweight=="MEAN"){
 	    //cout <<" wird angewandt" << endl;
+	    calc -> ProduceRecWeight(m_tpr->GetScaleWeight());
 	    calc -> ProduceWeight(m_tpr->GetScaleWeight());
 	  }
 	  else if(m_toppagptweight=="up"||m_toppagptweight=="Up"||m_toppagptweight=="UP"){
+	    calc -> ProduceRecWeight(m_tpr->GetScalePlus());
 	    calc -> ProduceWeight(m_tpr->GetScalePlus());
 	  }
 	  else if(m_toppagptweight=="down"||m_toppagptweight=="Down"||m_toppagptweight=="DOWN"){
+	    calc -> ProduceRecWeight(m_tpr->GetScaleMinus());
 	    calc -> ProduceWeight(m_tpr->GetScaleMinus());
 	  }
 	  else{
@@ -860,12 +869,15 @@ void AnalysisCycle::ExecuteEvent( const SInputData&, Double_t weight) throw( SEr
 
 	if(m_hepsf){
 	  if(m_TopTaggingSFMode=="mean"||m_TopTaggingSFMode=="Mean"||m_TopTaggingSFMode=="MEAN"){
+	    calc -> ProduceRecWeight(m_hepsf->GetScaleWeight(0));
 	    calc -> ProduceWeight(m_hepsf->GetScaleWeight(0));
 	  }
 	  else if(m_TopTaggingSFMode=="down"||m_TopTaggingSFMode=="Down"||m_TopTaggingSFMode=="DOWN"){
+	    calc -> ProduceRecWeight(m_hepsf->GetScaleWeight(-1));
 	    calc -> ProduceWeight(m_hepsf->GetScaleWeight(-1));
 	  }
 	  else if(m_TopTaggingSFMode=="up"||m_TopTaggingSFMode=="Up"||m_TopTaggingSFMode=="UP"){
+	    calc -> ProduceRecWeight(m_hepsf->GetScaleWeight(+1));
 	    calc -> ProduceWeight(m_hepsf->GetScaleWeight(+1));
 	  }
 	  else{
@@ -875,10 +887,12 @@ void AnalysisCycle::ExecuteEvent( const SInputData&, Double_t weight) throw( SEr
 
         //lepton scale factor
         if(m_lsf) {
+	  calc->ProduceRecWeight(m_lsf->GetWeight());
 	  calc->ProduceWeight(m_lsf->GetWeight());
         }
 	//pdf re-weighting for systematics
 	if(m_pdfweights){
+	  calc->ProduceGenWeight(m_pdfweights->GetWeight(m_pdf_index));
 	  calc->ProduceWeight(m_pdfweights->GetWeight(m_pdf_index));
 	}
 
@@ -1049,6 +1063,7 @@ void AnalysisCycle::WriteOutputTree() throw( SError)
     m_output_pvs.clear();
     m_output_topjets.clear();
     m_output_topjetsgen.clear();
+    m_output_cagenjets.clear();
     m_output_genjetswithparts.clear();
     m_output_prunedjets.clear();
     m_output_toptagjets.clear();
@@ -1071,6 +1086,7 @@ void AnalysisCycle::WriteOutputTree() throw( SError)
     if(m_TopTagJetCollection.size()>0) m_output_toptagjets=*m_bcc.toptagjets;
     if(m_HiggsTagJetCollection.size()>0) m_output_higgstagjets=*m_bcc.higgstagjets;
     if(m_addGenInfo && m_TopJetCollectionGen.size()>0) m_output_topjetsgen=*m_bcc.topjetsgen;
+    if(m_addGenInfo && m_CAGenJetCollection.size()>0) m_output_cagenjets=*m_bcc.cagenjets;
     if(m_addGenInfo && m_GenJetCollectionWithParts.size()>0) m_output_genjetswithparts=*m_bcc.genjetswithparts;
     if(m_PrunedJetCollection.size()>0) m_output_prunedjets=*m_bcc.prunedjets;
     if(m_addGenInfo && m_GenParticleCollection.size()>0) m_output_genparticles=*m_bcc.genparticles;

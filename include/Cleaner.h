@@ -45,7 +45,7 @@ class Cleaner{
    void TauEnergyResolutionShifter();
    
   void JetLeptonSubtractor(FactorizedJetCorrector *corrector, bool sort=true);
-
+  void TopJetLeptonSubtractor(FactorizedJetCorrector *corrector, bool sort=true);
   /**
    * Apply jet corrections and optional JEC Variation to jets in the BaseCycleContainer.
    * 

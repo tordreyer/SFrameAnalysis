@@ -731,7 +731,7 @@ std::string TwoDCutMuon::description()
 bool TriangularCut::pass(BaseCycleContainer *bcc)
 {
     if(bcc->electrons->size()!=1) {
-        std::cout << "WARNING: called triangular cut but electron collection contains " << bcc->electrons->size()<< " !=1 entries. Cut is not applied" <<std::endl;
+      //     std::cout << "WARNING: called triangular cut but electron collection contains " << bcc->electrons->size()<< " !=1 entries. Cut is not applied" <<std::endl;
         return true;
     }
     if(bcc->jets->size()<1) {
